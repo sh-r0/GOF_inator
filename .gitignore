@@ -1,0 +1,13 @@
+.vs
+*.vcxproj*
+*.cmake
+*.gof
+*.png
+*.exe
+*.mp4
+*.sln
+Debug
+Release
+todo.txt
+CMakeFiles
+CMakeCache.txt
