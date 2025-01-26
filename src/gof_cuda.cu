@@ -52,8 +52,8 @@ __global__ void d_gof(bMap_t _map) {
     //we compute one thread per one cell
     //max block size is 1024 threads -> we can get maximum of 32 side length with 34 necessary cell accesses -> we need 1024 + 4 * 32 + 4 = 1156 booleans (maximum)
 	//__shared__ bool cells[1156];  //potentially make this dynamic size in kernel launch parameters
-    size_t id_x = threadIdx.x + blockDim.x * blockIdx.x;
-    size_t id_y = threadIdx.y + blockDim.y * blockIdx.y;
+    int32_t id_x = threadIdx.x + blockDim.x * blockIdx.x;
+    int32_t id_y = threadIdx.y + blockDim.y * blockIdx.y;
 
     if (id_x >= _map.x || id_y >= _map.y) return;
 
@@ -80,9 +80,9 @@ __global__ void d_gof(bMap_t _map) {
 }
 
 //one iteration good only since we free map afterwards
-__host__ void iterateGof(bMap_t& d_map, size_t _threads, size_t _iterations) {
-    dim3 dim = { (uint32_t)_threads, (uint32_t)_threads, 1 };
-    dim3 blocks = { (uint32_t)ceil(float(d_map.x) / _threads), (uint32_t)ceil(float(d_map.y) / _threads), 1 };
+__host__ void iterateGof(bMap_t& d_map, size_t _threads_x, size_t _threads_y, size_t _iterations) {
+    dim3 dim = { (uint32_t)_threads_x, (uint32_t)_threads_y, 1 };
+    dim3 blocks = { (uint32_t)ceil(float(d_map.x) / _threads_x), (uint32_t)ceil(float(d_map.y) / _threads_y), 1 };
 
     for (size_t i = 0; i < _iterations; i++) {
         d_gof<<<dim, blocks>>>(d_map);
@@ -93,12 +93,12 @@ __host__ void iterateGof(bMap_t& d_map, size_t _threads, size_t _iterations) {
     return;
 }
 
-__host__ void cudaGof(bMap_t& _map, size_t _threads, size_t _iterations) {
-    if (_threads > 32) return;
+__host__ void cudaGof(bMap_t& _map, size_t _threads_x, size_t _threads_y, size_t _iterations) {
+    if (_threads_x * _threads_y > 1024) return;
     
     bMap_t d_map = {};
     createDeviceMap(_map, d_map);
-    iterateGof(d_map, _threads, _iterations);
+    iterateGof(d_map, _threads_x, _threads_y, _iterations);
 	//d_gof<<<dim, blocks>>>(d_map);
     //new state is stored in board2 -> we swap these
     std::swap(d_map.board, d_map.board2);
