@@ -343,115 +343,116 @@ void gofWindow_t::gpuBtnFunc(void){
 }
 
 void gofWindow_t::runBtnFunc(void){    
-    if(updateRunConfig()){
+    if(!updateRunConfig()){ 
+        infoTextBuff->set_text(std::format("Error parsing config information!"));
+        return;
+    }
+   
+    if(rConfig.recordSim) {
+        if(map.x != record.x || map.y != record.y){
+            cleanMapRecord(record);
+            initMapRecord(record, map);
+        }
+    }
+
+    std::string resText = std::format("Ran {} iterations\n", rConfig.iterations);
+
+    if(rConfig.useCpu && rConfig.useGpu) {
+        bMap_t tmp = cloneMap(map);
+
         if(rConfig.recordSim) {
-            if(map.x != record.x || map.y != record.y){
-                cleanMapRecord(record);
-                initMapRecord(record, map);
-            }
-        }
-
-        std::string resText = std::format("Ran {} iterations\n", rConfig.iterations);
-        
-        if(rConfig.useCpu && rConfig.useGpu) {
-            bMap_t tmp = cloneMap(map);
-                
-            if(rConfig.recordSim) {
-                infoTextBuff->set_text("Can't run recording on this configuration!");
-            } else {
-                std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now(), t2;
-
-                for(size_t i = 0; i < rConfig.iterations; i++)
-                    parGof(map, rConfig.cpuThreads, rConfig.schType);
-                
-                t2 = std::chrono::steady_clock::now(); 
-                rResult.cpuTime = std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count(); 
-                t1 = std::chrono::steady_clock::now(); 
-
-                cudaGof(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, rConfig.iterations);
-
-                t2 = std::chrono::steady_clock::now(); 
-                rResult.gpuTime = std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count(); 
-            
-                bool resultsSame = compareMap(map, tmp);
-
-                resText += std::format("Cpu time: {}{}\n",
-                        rResult.cpuTime > 1000 ? rResult.cpuTime / 1000 : rResult.cpuTime,
-                        rResult.cpuTime > 1000 ? "seconds" : "milliseconds"
-                        );
-
-
-                resText += std::format("Gpu time: {}{}\n",
-                        rResult.gpuTime > 1000 ? rResult.gpuTime / 1000 : rResult.gpuTime,
-                        rResult.gpuTime > 1000 ? "seconds" : "milliseconds"
-                        );
-                
-                resText += std::format("Got {} results", resultsSame ? "same" : "different");
-            }
-                
-            goto _F_endRun;
-        }
-
-        if(rConfig.useCpu) {
+            infoTextBuff->set_text("Can't run recording on this configuration!");
+        } else {
             std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now(), t2;
-            
-            if(!rConfig.renderToBuff && !rConfig.iterations) {
-                for(size_t i = 0; i < rConfig.iterations; i++)
-                    parGof(map, rConfig.cpuThreads, rConfig.schType);
-            } else {
-                for(size_t i = 0; i < rConfig.iterations; i++) {
-                    parGof(map, rConfig.cpuThreads, rConfig.schType);
-                    if(rConfig.recordSim) pushMapState(record, map);
-                    /*if(rConfig.renderToBuff) {
-                        updatePixelBuff();
-                    }*/
-                }
-            }
+
+            for(size_t i = 0; i < rConfig.iterations; i++)
+                parGof(map, rConfig.cpuThreads, rConfig.schType);
 
             t2 = std::chrono::steady_clock::now(); 
             rResult.cpuTime = std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count(); 
-            
+            t1 = std::chrono::steady_clock::now(); 
+
+            cudaGof(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, rConfig.iterations);
+
+            t2 = std::chrono::steady_clock::now(); 
+            rResult.gpuTime = std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count(); 
+
+            bool resultsSame = compareMap(map, tmp);
+
             resText += std::format("Cpu time: {}{}\n",
                     rResult.cpuTime > 1000 ? rResult.cpuTime / 1000 : rResult.cpuTime,
                     rResult.cpuTime > 1000 ? "seconds" : "milliseconds"
                     );
-        }                
-        
-        if(rConfig.useGpu) {
-            std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now(), t2;
-            
-            if(!rConfig.renderToBuff && !rConfig.iterations) {
-                cudaGof(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, rConfig.iterations);
-            } else {
-                for(size_t i = 0; i < rConfig.iterations; i++) {
-                    cudaGof(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, 1);
-                    if(rConfig.recordSim) pushMapState(record, map);
-                    /*if(rConfig.renderToBuff) {
-                        updatePixelBuff();
-                        queue_draw();
-                    } */
-                }
-            }
-            
-            t2 = std::chrono::steady_clock::now(); 
-            rResult.gpuTime = std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count(); 
-            
+
+
             resText += std::format("Gpu time: {}{}\n",
                     rResult.gpuTime > 1000 ? rResult.gpuTime / 1000 : rResult.gpuTime,
                     rResult.gpuTime > 1000 ? "seconds" : "milliseconds"
                     );
+
+            resText += std::format("Got {} results", resultsSame ? "same" : "different");
         }
 
-        _F_endRun:
-        updatePixelBuff();
-            
-        if(rConfig.recordSim)
-            resText += std::format("Recording has {} frames", record.boardStates.size());
-            
-        infoTextBuff->set_text(resText);
+        goto _F_endRun;
     }
-    else     
-        infoTextBuff->set_text(std::format("Error parsing config information!"));
+
+    if(rConfig.useCpu) {
+        std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now(), t2;
+
+        if(!rConfig.renderToBuff && !rConfig.iterations) {
+            for(size_t i = 0; i < rConfig.iterations; i++)
+                parGof(map, rConfig.cpuThreads, rConfig.schType);
+        } else {
+            for(size_t i = 0; i < rConfig.iterations; i++) {
+                parGof(map, rConfig.cpuThreads, rConfig.schType);
+                if(rConfig.recordSim) pushMapState(record, map);
+                /*if(rConfig.renderToBuff) {
+                  updatePixelBuff();
+                  }*/
+            }
+        }
+
+        t2 = std::chrono::steady_clock::now(); 
+        rResult.cpuTime = std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count(); 
+
+        resText += std::format("Cpu time: {}{}\n",
+                rResult.cpuTime > 1000 ? rResult.cpuTime / 1000 : rResult.cpuTime,
+                rResult.cpuTime > 1000 ? "seconds" : "milliseconds"
+                );
+    }                
+
+    if(rConfig.useGpu) {
+        std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now(), t2;
+
+        if(!rConfig.renderToBuff && !rConfig.iterations) {
+            cudaGof(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, rConfig.iterations);
+        } else {
+            for(size_t i = 0; i < rConfig.iterations; i++) {
+                cudaGof(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, 1);
+                if(rConfig.recordSim) pushMapState(record, map);
+                /*if(rConfig.renderToBuff) {
+                  updatePixelBuff();
+                  queue_draw();
+                  } */
+            }
+        }
+
+        t2 = std::chrono::steady_clock::now(); 
+        rResult.gpuTime = std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count(); 
+
+        resText += std::format("Gpu time: {}{}\n",
+                rResult.gpuTime > 1000 ? rResult.gpuTime / 1000 : rResult.gpuTime,
+                rResult.gpuTime > 1000 ? "seconds" : "milliseconds"
+                );
+    }
+
+_F_endRun:
+    updatePixelBuff();
+
+    if(rConfig.recordSim)
+        resText += std::format("Recording has {} frames", record.boardStates.size());
+
+    infoTextBuff->set_text(resText);
     
     return;
 }
