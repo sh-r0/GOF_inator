@@ -101,7 +101,7 @@ __host__ void cudaGof(bMap_t& _map, size_t _threads_x, size_t _threads_y, size_t
     iterateGof(d_map, _threads_x, _threads_y, _iterations);
 	//d_gof<<<dim, blocks>>>(d_map);
     //new state is stored in board2 -> we swap these
-    std::swap(d_map.board, d_map.board2);
+    //std::swap(d_map.board, d_map.board2);
 
     cpMapFromDevice(_map, d_map);
     freeDeviceMap(d_map);
