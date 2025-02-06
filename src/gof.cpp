@@ -29,11 +29,25 @@ void initMap(bMap_t& _map, size_t _x, size_t _y) {
 }
 
 void randomizeMap(bMap_t& _map) {
-    const size_t size = _map.x * _map.y;
-    _map.board = (bool*)malloc(_map.x * _map.y);
+    for (size_t i = 0; i < _map.x * _map.y; i++)
+        _map.board[i] = rand() % 2;
 
-    for (size_t x = 0; x < _map.x * _map.y; x++)
-        _map.board[x] = rand() % 2;
+    return;
+}
+
+void every2ndMap(bMap_t& _map) {
+    for(size_t i = 0; i < _map.x * _map.y; i++)
+        _map.board[i] = i % 2;
+
+    return;
+} 
+
+void tPatternMap(bMap_t& _map) {
+    for(size_t i = 0; i < _map.x*_map.y;i++) {
+        if(i/_map.x < _map.y/3 || (i%_map.x > _map.x/3 && i%_map.x < 2*_map.x/3))
+            _map.board[i] = 1;
+        else _map.board[i] = 0;
+    }
 
     return;
 }

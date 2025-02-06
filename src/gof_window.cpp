@@ -1,5 +1,7 @@
+#include <cmath>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <format>
 #include <memory>
@@ -7,19 +9,30 @@
 #include <chrono>
 #include <memory>
 #include <algorithm>
+#include <queue>
 #include <string>
 #include <cstdlib>
 #include <cctype>
+#include <thread>
 #include <unordered_map>
 
+#include <cuda.h>
+#include <cuda_runtime_api.h>
+#include <cuda_runtime.h>
+
+#include "gdkmm/pixbuf.h"
+#include "glibmm/dispatcher.h"
+#include "glibmm/main.h"
 #include "gof.hpp"
 #include "gof_cuda.hpp"
 #include "gof_io.hpp"
 #include "gof_parallel.hpp"
 #include "gof_window.hpp"
 #include "gof.hpp"
+#include "gtk/gtk.h"
 #include "gtkmm/box.h"
 #include "gtkmm/enums.h"
+#include "gtkmm/widget.h"
 #include "sigc++/functors/mem_fun.h"
 
 textEntry_t createEntry(const std::string& _txt, size_t _width){
@@ -36,17 +49,15 @@ textEntry_t createEntry(const std::string& _txt, size_t _width){
     return res;
 }
 
-
-gofWindow_t::gofWindow_t(){
+gofWindow_t::gofWindow_t() {
     init();
 }
 
-void gofWindow_t::initLeftColumn(void){
-    pixBuff = Gdk::Pixbuf::create(Gdk::Colorspace::RGB, false, 8, 256,256);
-    dArea.set_size_request(256,256);
-    dArea.set_draw_func(sigc::mem_fun(*this, &gofWindow_t::onDraw));
-    dDispatcher.connect(sigc::mem_fun(*this, &gofWindow_t::onWorkerNotification));
+gofWindow_t::~gofWindow_t() {
+    simThread.join();
+}
 
+void gofWindow_t::initLeftColumn(void){
     infoTextBuff = Gtk::TextBuffer::create();
     infoTextBuff->set_text("a\nb\nc");
 
@@ -75,9 +86,23 @@ void gofWindow_t::initLeftColumn(void){
     leftColumn.set_orientation(Gtk::Orientation::VERTICAL);
     leftColumn.set_size_request(256,-1);
 
-    leftColumn.append(dArea);
+//    leftColumn.append(dArea);
     leftColumn.append(infoText);
     leftColumn.append(initBox);
+
+    return;
+}
+
+void gofWindow_t::initMiddleColumn(void) {
+    middleColumn.set_orientation(Gtk::Orientation::VERTICAL);
+    middleColumn.set_size_request(256, -1);  
+    
+    pixBuff = Gdk::Pixbuf::create(Gdk::Colorspace::RGB, false, 8, 256,256);
+    dArea.set_size_request(256,256);
+    dArea.set_draw_func(sigc::mem_fun(*this, &gofWindow_t::dAreaOnDraw));
+    dDispatcher.connect(sigc::mem_fun(*this, &gofWindow_t::onWorkerNotification));
+
+    middleColumn.append(dArea);
 
     return;
 }
@@ -132,6 +157,7 @@ void gofWindow_t::initConfigBoxes(void){
     cpuConfig.set_orientation(Gtk::Orientation::VERTICAL);
 
     cpuThreadsEntry = createEntry("Threads: ", 256);
+    chunkSizeEntry = createEntry("Chunk size:", 256);
     cpuSchedule.set_entry_text_column(0);
     cpuSchedule.append("Dynamic");
     cpuSchedule.append("Static");
@@ -139,6 +165,7 @@ void gofWindow_t::initConfigBoxes(void){
     cpuFrame.set_label("CPU config");
 
     cpuConfig.append(cpuThreadsEntry.box);
+    cpuConfig.append(chunkSizeEntry.box);
     cpuConfig.append(cpuSchedule);
     cpuFrame.set_child(cpuConfig);
 
@@ -146,11 +173,13 @@ void gofWindow_t::initConfigBoxes(void){
     gpuFrame.set_label("GPU config");
     gpuConfig.set_orientation(Gtk::Orientation::VERTICAL);
     
-    gpuThreadsEntry_x = createEntry("X threads: ", 256);
-    gpuThreadsEntry_y = createEntry("Y threads: ", 256);
-    
+    gpuThreadsEntry_x = createEntry("Block x: ", 256);
+    gpuThreadsEntry_y = createEntry("Block y: ", 256);
+    sharedMemCheckbox.set_label("Use shared memory");
+
     gpuConfig.append(gpuThreadsEntry_x.box);
     gpuConfig.append(gpuThreadsEntry_y.box);
+    gpuConfig.append(sharedMemCheckbox);
 
     gpuFrame.set_child(gpuConfig);
 
@@ -161,9 +190,15 @@ void gofWindow_t::initConfigBoxes(void){
     
     initAcceptBtn.set_label("Accept");
     initAcceptBtn.signal_clicked().connect(sigc::mem_fun(*this, &gofWindow_t::initAcceptFunc));
+    initTypeCB.set_entry_text_column(0);
+    initTypeCB.append("random 50%");
+    initTypeCB.append("every 2nd");
+    initTypeCB.append("T pattern");
+    initTypeCB.set_active_text("random 50%");
 
     initOptions.append(initSize_x.box); 
     initOptions.append(initSize_y.box);
+    initOptions.append(initTypeCB);
     initOptions.append(initAcceptBtn);
 
     //load
@@ -193,22 +228,36 @@ void gofWindow_t::initConfigBoxes(void){
 void gofWindow_t::init(void) {
     set_title("GOF");
 
+    cudaDeviceSetLimit(cudaLimitMallocHeapSize, 1024*1024*1024);
+  
+    /*
+    cudaDeviceProp dp;
+    cudaGetDeviceProperties_v2(&dp, 0);
+    std::print(std::cout, "{}/{}/{}\n", dp.maxGridSize[0], dp.maxGridSize[1], dp.maxGridSize[2]);
+    std::print(std::cout, "{}/{}/{}\n", dp.maxThreadsPerBlock, dp.maxBlocksPerMultiProcessor, dp.multiProcessorCount);
+    std::print(std::cout, "{}/{}/{}\n", dp.name, dp.maxThreadsPerMultiProcessor, dp.multiProcessorCount); 
+    */
+    
     map = {};
-
     currOpenConfig = CONFIG_TYPE_NONE;
+    //get_application()->;
 
     initLeftColumn();
+    initMiddleColumn();
     initRightColumn();
     initConfigBoxes();
 
     box.set_orientation(Gtk::Orientation::HORIZONTAL);
 
     box.append(leftColumn);
+    box.append(middleColumn);
     box.append(rightColumn);
     set_child(box);
+    //Glib::signal_idle().connect(sigc::mem_fun(*this, &gofWindow_t::onIdle));
 
     rConfig = {
         .iterations = 1,
+        .chunkSize = 0,
         .useGpu = false,
         .useCpu = false,
         .renderToBuff = false,
@@ -218,7 +267,7 @@ void gofWindow_t::init(void) {
     return;
 }
 
-bool getEntryVal(const textEntry_t& _entry, size_t& _val) {
+bool parseEntryVal(const textEntry_t& _entry, size_t& _val) {
     if(_entry.entry.get_text_length() == 0) return false;
     std::string txt = _entry.entry.get_text();
     for(char c : txt)
@@ -242,13 +291,19 @@ bool gofWindow_t::updateRunConfig(void){
     if(!rConfig.useCpu && !rConfig.useGpu)
         return false;
 
-    if(!getEntryVal(iterationEntry, rConfig.iterations))
+    if(!parseEntryVal(iterationEntry, rConfig.iterations))
         return false;
 
     if(rConfig.useCpu){   
-        if(!getEntryVal(cpuThreadsEntry, rConfig.cpuThreads))
+        if(!parseEntryVal(cpuThreadsEntry, rConfig.cpuThreads))
             return false;
-    
+   
+        //parseEntryVal(chunkSizeEntry, rConfig.chunkSize);
+        
+        //          should be fine to not do this
+        if(!parseEntryVal(chunkSizeEntry, rConfig.chunkSize))
+            rConfig.chunkSize = 0;
+        
         std::string txt = cpuSchedule.get_active_text();
         if(mp.find(txt) == mp.end())
             return false;
@@ -257,10 +312,12 @@ bool gofWindow_t::updateRunConfig(void){
     }
 
     if(rConfig.useGpu){ 
-        if(!getEntryVal(gpuThreadsEntry_x, rConfig.gpuThreads_x))
+        rConfig.useSharedMem = sharedMemCheckbox.get_active();
+        //std::cout<<std::format("shared mem: {}\n", rConfig.useSharedMem);
+        if(!parseEntryVal(gpuThreadsEntry_x, rConfig.gpuThreads_x))
             return false;
     
-        if(!getEntryVal(gpuThreadsEntry_y, rConfig.gpuThreads_y))
+        if(!parseEntryVal(gpuThreadsEntry_y, rConfig.gpuThreads_y))
             return false;
     }
 
@@ -269,37 +326,55 @@ bool gofWindow_t::updateRunConfig(void){
 
 void gofWindow_t::updatePixelBuff() {
     const size_t buff_x = pixBuff->get_width(), buff_y = pixBuff->get_height();
+    
+    if(buff_x > map.x || buff_y > map.y) {
+        size_t ratio_x = buff_x / map.x;  
+        size_t ratio_y = buff_y / map.y;  
+   
+        for(size_t x = 0; x < buff_x; x++)
+            for(size_t y = 0; y < buff_y; y++){
+                size_t coord_x = x/ratio_x, coord_y = y/ratio_y; 
+                uint8_t val = 0;
+                if(coord_x < map.x && coord_y < map.y) 
+                    val = map.at(coord_x,coord_y) ? 0 : 255;
 
-    const size_t size_x = std::min(buff_x, map.x);
-    const size_t size_y = std::min(buff_y, map.y);
+                pixBuff->get_pixels()[x*3 + y*buff_x*3 + 0] = val;
+                pixBuff->get_pixels()[x*3 + y*buff_x*3 + 1] = val;
+                pixBuff->get_pixels()[x*3 + y*buff_x*3 + 2] = val;
+            }
+    } else {
+        for(size_t x = 0; x < buff_x; x++)
+            for(size_t y = 0; y < buff_y; y++){
+                uint8_t val = map.at(x,y) ? 0 : 255;
 
-    for(size_t x = 0; x < size_x; x++)
-        for(size_t y = 0; y < size_y; y++){
-            uint8_t val = map.at(x,y) ? 0 : 255;
-            pixBuff->get_pixels()[x*3 + y*buff_x*3 + 0] = val;
-            pixBuff->get_pixels()[x*3 + y*buff_x*3 + 1] = val;
-            pixBuff->get_pixels()[x*3 + y*buff_x*3 + 2] = val;
-        }
+                pixBuff->get_pixels()[x*3 + y*buff_x*3 + 0] = val;
+                pixBuff->get_pixels()[x*3 + y*buff_x*3 + 1] = val;
+                pixBuff->get_pixels()[x*3 + y*buff_x*3 + 2] = val;
+            }
+    }
+    
     dArea.queue_draw();
     return;
 }
 
-void gofWindow_t::updateInfoTextBuff() {
-    static int32_t counter = 123;
-    infoTextBuff->set_text(std::format("{}\nxd\nxd", counter++));
-
-    return;
+bool gofWindow_t::onIdle(void) {
+    dArea.queue_draw();
+    
+    return true;
 }
 
-void gofWindow_t::onDraw(const Cairo::RefPtr<Cairo::Context>& _cr, int _width, int _height) {
+void gofWindow_t::dAreaOnDraw(const Cairo::RefPtr<Cairo::Context>& _cr, int _width, int _height) {
+    usingPixBuff.lock();
     Gdk::Cairo::set_source_pixbuf(_cr, pixBuff);
     _cr->paint();
+    usingPixBuff.unlock();
+    static int frames=0;
+    std::print(std::cout, "frame: {}\n", frames++);
     return;
 }
 
 void gofWindow_t::onWorkerNotification(void) {
-    queue_draw();
-
+    dArea.queue_draw();
     return;
 }
 
@@ -342,12 +417,46 @@ void gofWindow_t::gpuBtnFunc(void){
     return;
 }
 
+void runSimThread(gofWindow_t* _win) { 
+    runConfig_t rConfig = _win->rConfig;
+    bMap_t map = cloneMap(_win->map);
+    const size_t size = map.x * map.y;
+
+    for(size_t i = 0; i < rConfig.iterations; i++) {
+        if(rConfig.useCpu)
+            parGof(map, rConfig.cpuThreads, rConfig.schType, rConfig.chunkSize);
+        else
+            if(!rConfig.useSharedMem)
+                cudaGof(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, 1);
+            else
+                cudaGof_shared(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, 1);
+        
+        if(rConfig.recordSim) pushMapState(_win->record, map);
+        if(rConfig.renderToBuff) {
+            if(_win->usingPixBuff.try_lock()) {
+                mempcpy(_win->map.board, map.board, size);
+                _win->updatePixelBuff();
+                _win->dDispatcher.emit();
+
+                _win->usingPixBuff.unlock();
+            }
+        }
+    }
+    
+    mempcpy(_win->map.board, map.board, size);
+    free(map.board);
+    free(map.board2);
+    return;
+}
+
 void gofWindow_t::runBtnFunc(void){    
     if(!updateRunConfig()){ 
         infoTextBuff->set_text(std::format("Error parsing config information!"));
         return;
     }
-   
+    if(!rConfig.useCpu && !rConfig.useGpu)
+        return;
+
     if(rConfig.recordSim) {
         if(map.x != record.x || map.y != record.y){
             cleanMapRecord(record);
@@ -356,26 +465,28 @@ void gofWindow_t::runBtnFunc(void){
     }
 
     std::string resText = std::format("Ran {} iterations\n", rConfig.iterations);
-
     if(rConfig.useCpu && rConfig.useGpu) {
         bMap_t tmp = cloneMap(map);
 
-        if(rConfig.recordSim) {
-            infoTextBuff->set_text("Can't run recording on this configuration!");
+        if(rConfig.recordSim || rConfig.renderToBuff) {
+            infoTextBuff->set_text("Can't run recording/rendering to buffer on this configuration!");
         } else {
             std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now(), t2;
 
             for(size_t i = 0; i < rConfig.iterations; i++)
-                parGof(map, rConfig.cpuThreads, rConfig.schType);
+                parGof(map, rConfig.cpuThreads, rConfig.schType, rConfig.chunkSize);
 
             t2 = std::chrono::steady_clock::now(); 
             rResult.cpuTime = std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count(); 
-            t1 = std::chrono::steady_clock::now(); 
+            std::chrono::steady_clock::time_point t3 = std::chrono::steady_clock::now(), t4; 
+            
+            if(rConfig.useSharedMem)
+                cudaGof_shared(tmp, rConfig.gpuThreads_x, rConfig.gpuThreads_y, rConfig.iterations);
+            else 
+                cudaGof(tmp, rConfig.gpuThreads_x, rConfig.gpuThreads_y, rConfig.iterations);
 
-            cudaGof(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, rConfig.iterations);
-
-            t2 = std::chrono::steady_clock::now(); 
-            rResult.gpuTime = std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count(); 
+            t4 = std::chrono::steady_clock::now(); 
+            rResult.gpuTime = std::chrono::duration_cast<std::chrono::milliseconds>(t4-t3).count(); 
 
             bool resultsSame = compareMap(map, tmp);
 
@@ -383,7 +494,6 @@ void gofWindow_t::runBtnFunc(void){
                     rResult.cpuTime > 1000 ? rResult.cpuTime / 1000 : rResult.cpuTime,
                     rResult.cpuTime > 1000 ? "seconds" : "milliseconds"
                     );
-
 
             resText += std::format("Gpu time: {}{}\n",
                     rResult.gpuTime > 1000 ? rResult.gpuTime / 1000 : rResult.gpuTime,
@@ -395,21 +505,23 @@ void gofWindow_t::runBtnFunc(void){
 
         goto _F_endRun;
     }
-
+    
     if(rConfig.useCpu) {
         std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now(), t2;
 
-        if(!rConfig.renderToBuff && !rConfig.iterations) {
+        if(!rConfig.renderToBuff && !rConfig.recordSim) {
             for(size_t i = 0; i < rConfig.iterations; i++)
-                parGof(map, rConfig.cpuThreads, rConfig.schType);
-        } else {
+                parGof(map, rConfig.cpuThreads, rConfig.schType, rConfig.chunkSize);
+        } else if (!rConfig.renderToBuff) {
             for(size_t i = 0; i < rConfig.iterations; i++) {
-                parGof(map, rConfig.cpuThreads, rConfig.schType);
-                if(rConfig.recordSim) pushMapState(record, map);
-                /*if(rConfig.renderToBuff) {
-                  updatePixelBuff();
-                  }*/
+                parGof(map, rConfig.cpuThreads, rConfig.schType, rConfig.chunkSize);
+                pushMapState(record, map); 
             }
+        } else {
+            if(simThread.joinable()) simThread.join();
+            simThread = std::thread(runSimThread, this);
+            infoTextBuff->set_text(std::format("Running {} iterations", rConfig.iterations));
+            return;
         }
 
         t2 = std::chrono::steady_clock::now(); 
@@ -423,22 +535,31 @@ void gofWindow_t::runBtnFunc(void){
 
     if(rConfig.useGpu) {
         std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now(), t2;
-
-        if(!rConfig.renderToBuff && !rConfig.iterations) {
-            cudaGof(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, rConfig.iterations);
-        } else {
+        float kernelTime = 0;
+        if(!rConfig.renderToBuff && !rConfig.recordSim) { 
+            if(rConfig.useSharedMem)
+                cudaGof_shared(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, rConfig.iterations);
+            else 
+                kernelTime = cudaGof(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, rConfig.iterations);
+        } else if(!rConfig.renderToBuff) {
             for(size_t i = 0; i < rConfig.iterations; i++) {
-                cudaGof(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, 1);
+                if(rConfig.useSharedMem)
+                    cudaGof_shared(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, 1);
+                else 
+                    kernelTime += cudaGof(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, 1);
                 if(rConfig.recordSim) pushMapState(record, map);
-                /*if(rConfig.renderToBuff) {
-                  updatePixelBuff();
-                  queue_draw();
-                  } */
             }
+        } else {
+            if(simThread.joinable()) simThread.join();
+            simThread = std::thread(runSimThread, this);
+            infoTextBuff->set_text(std::format("Running {} iterations", rConfig.iterations));
+            return;
         }
 
         t2 = std::chrono::steady_clock::now(); 
         rResult.gpuTime = std::chrono::duration_cast<std::chrono::milliseconds>(t2-t1).count(); 
+        if(kernelTime != 0)
+            rResult.gpuTime = std::round(kernelTime);
 
         resText += std::format("Gpu time: {}{}\n",
                 rResult.gpuTime > 1000 ? rResult.gpuTime / 1000 : rResult.gpuTime,
@@ -504,11 +625,31 @@ void gofWindow_t::openExportOptions(void) {
 
 void gofWindow_t::initAcceptFunc(void) {
     size_t size_x, size_y;
-    if(!getEntryVal(initSize_x, size_x)) return;
-    if(!getEntryVal(initSize_y, size_y)) return;
-    
+    if(!parseEntryVal(initSize_x, size_x)) return;
+    if(!parseEntryVal(initSize_y, size_y)) return;
+
+    //std::print(std::cout, "size: {}|{}\n", size_x, size_y);
     initMap(map, size_x, size_y);    
-    randomizeMap(map);
+    
+    switch(initTypeCB.get_active_row_number()) {
+        default:
+        case 0: //random 50%
+            randomizeMap(map);
+            break;
+        case 1: //every 2nd 
+            every2ndMap(map); 
+            break;
+        case 2: //T pattern
+            tPatternMap(map);
+            break;
+    }
+
+    size_t buffSize_x = std::clamp(size_x, (size_t)256, (size_t)1024);
+    size_t buffSize_y = std::clamp(size_y, (size_t)256, (size_t)1024);
+
+    pixBuff = Gdk::Pixbuf::create(Gdk::Colorspace::RGB, false, 8, buffSize_x, buffSize_y);
+    dArea.set_size_request(buffSize_x, buffSize_y);
+    //std::print(std::cout, "buff size: {}|{}\n", buffSize_x, buffSize_y);
     updatePixelBuff();
 
     return;

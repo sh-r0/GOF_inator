@@ -21,20 +21,23 @@
 #include "gtkmm/textview.h"
 #include "gtkmm/window.h"
 #include "sigc++/functors/mem_fun.h"
+#include <thread>
 
 #include "gof_parallel.hpp"
 
 #include <gtkmm.h>
+#include <mutex>
 
 struct runConfig_t {
     size_t iterations;
     size_t gpuThreads_x, gpuThreads_y;
     size_t cpuThreads;
+    size_t chunkSize;
 
     bool useGpu, useCpu;
     scheduleType schType;
-    bool renderToBuff;
-    bool recordSim;
+    bool renderToBuff, recordSim;
+    bool useSharedMem;
 };
 
 struct runResult_t {
@@ -64,16 +67,19 @@ public:
     
     bMap_t map;
     mapRecord_t record;
+    std::thread simThread;
+    std::mutex usingPixBuff;
 
     openConfigType currOpenConfig;
 
-    Gtk::Box box, rightColumn, leftColumn;
+    Gtk::Box box, rightColumn, middleColumn, leftColumn;
     Gtk::Box initBox, cgpuBox;
     Gtk::Box loadOptions, exportOptions, initOptions;
     Gtk::Box gpuConfig, cpuConfig, baseConfig;
     Gtk::Frame gpuFrame, cpuFrame, baseConfigFrame;
 
     textEntry_t cpuThreadsEntry;
+    textEntry_t chunkSizeEntry;
     Gtk::ComboBoxText cpuSchedule;
 
     textEntry_t gpuThreadsEntry_x, gpuThreadsEntry_y;
@@ -85,11 +91,12 @@ public:
     Gtk::Button exportAcceptBtn;
 
     textEntry_t initSize_x, initSize_y;
+    Gtk::ComboBoxText initTypeCB;
     Gtk::Button initAcceptBtn;
 
     Gtk::Button exportBtn, loadBtn, initBtn;
     Gtk::Button runBtn, cpuBtn, gpuBtn;
-    Gtk::CheckButton renderCheckbox, recordCheckbox, exportRecording;
+    Gtk::CheckButton renderCheckbox, recordCheckbox, exportRecording, sharedMemCheckbox;
 
     textEntry_t iterationEntry;
 
@@ -103,8 +110,10 @@ public:
     bool renderInBuff = false;
 
     gofWindow_t();
+    ~gofWindow_t();
     void initConfigBoxes(void);
     void initLeftColumn(void);
+    void initMiddleColumn(void);
     void initRightColumn(void);
     void init(void);
 
@@ -124,8 +133,8 @@ public:
 
     bool updateRunConfig(void);
     void updatePixelBuff(void);
-    void updateInfoTextBuff(void);
-    void onDraw(const Cairo::RefPtr<Cairo::Context>& _cr, int _width, int _height);
+    bool onIdle(void);
+    void dAreaOnDraw(const Cairo::RefPtr<Cairo::Context>& _cr, int _width, int _height);
     void onWorkerNotification(void);
     void toggleRender(void);
     void toggleRecord(void);

@@ -11,4 +11,4 @@ enum scheduleType : uint8_t {
 	SCHEDULE_TYPE_MAX
 };
 
-void parGof(bMap_t& _map, size_t _threads, scheduleType _type);
+void parGof(bMap_t& _map, size_t _threads, scheduleType _type, size_t _chunkSize);
