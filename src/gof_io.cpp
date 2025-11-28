@@ -31,7 +31,7 @@ void loadNative(const std::filesystem::path& _path, bMap_t& _map) {
 
 	size_t mapSize = _map.x * _map.y;
 	if (fSize != (mapSize + 2 * sizeof(_map.x))) {
-		std::cout << std::format("unexpected filesize!\nexpected {} found {}\n", _map.x * _map.y + 2 * sizeof(_map.x), fSize);
+		std::cout << std::format("unexpected filesize!\nexpected {} found {}\n", mapSize + 2 * sizeof(_map.x), fSize);
 		_map.x = 0; _map.y = 0;
 		_map.board = nullptr;
 		return;
@@ -95,13 +95,15 @@ void saveImage(const std::filesystem::path& _path, bMap_t& _map) {
 void saveNative(const std::filesystem::path& _path, bMap_t& _map) {
 	FILE* outputFile = fopen(_path.string().c_str(), "wb");
 
-	fwrite(&_map.x, sizeof(_map.x), 1, outputFile);
-	fwrite(&_map.y, sizeof(_map.y), 1, outputFile);
-
 	size_t mapSize = _map.x * _map.y;
-	(void)fwrite(_map.board, 1, mapSize, outputFile);
 
-	return;
+    fwrite(&_map.x, sizeof(_map.x), 1, outputFile);
+    fwrite(&_map.y, sizeof(_map.y), 1, outputFile);
+	fwrite(_map.board, 1, mapSize, outputFile);
+    
+    fclose(outputFile);
+
+    return;
 }
 
 void saveMap(const std::filesystem::path& _path, bMap_t& _map) {
@@ -133,7 +135,7 @@ void saveRecord(const std::filesystem::path& _path, mapRecord_t& _record) {
     makeVid("tmp/frame_%d.png", _path);
     
     //remove tmp/*
-    system("rm -rf tmp");
+    system("rm -r tmp");
 
     return;
 }

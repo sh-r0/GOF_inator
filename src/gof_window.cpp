@@ -54,12 +54,14 @@ gofWindow_t::gofWindow_t() {
 }
 
 gofWindow_t::~gofWindow_t() {
+    cleanMap(map);
+    cleanMapRecord(record);
     simThread.join();
 }
 
 void gofWindow_t::initLeftColumn(void){
     infoTextBuff = Gtk::TextBuffer::create();
-    infoTextBuff->set_text("a\nb\nc");
+    infoTextBuff->set_text("\n\n ");
 
     infoText.set_buffer(infoTextBuff);
     infoText.set_editable(false);
@@ -369,7 +371,6 @@ void gofWindow_t::dAreaOnDraw(const Cairo::RefPtr<Cairo::Context>& _cr, int _wid
     _cr->paint();
     usingPixBuff.unlock();
     static int frames=0;
-    std::print(std::cout, "frame: {}\n", frames++);
     return;
 }
 
@@ -657,7 +658,7 @@ void gofWindow_t::initAcceptFunc(void) {
 
 void gofWindow_t::exportAcceptFunc(void) {
     std::string txt = exportPath.entry.get_text();
-    if(recordCheckbox.get_active()) {
+    if(exportRecording.get_active()) {
         saveRecord(txt, record);    
     } else 
         saveMap(txt, map);

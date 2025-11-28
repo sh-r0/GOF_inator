@@ -152,17 +152,17 @@ __host__ float iterateGof(bMap_t& d_map, size_t _threads_x, size_t _threads_y, s
     cudaEventCreate(&ev1,0);
     cudaEventCreate(&ev2,0);
 
+    cudaEventRecord(ev1);
     //std::cout<<std::format("d:{},{} b:{},{}\n", dim.x,dim.y,blocks.x,blocks.y);
     for (size_t i = 0; i < _iterations; i++) {
-        cudaEventRecord(ev1);
         d_gof<<<blocks, dim>>>(d_map);
-        cudaEventRecord(ev2);
-        cudaEventSynchronize(ev2);
-        cudaEventElapsedTime(&ms, ev1, ev2);
-        res += ms;
+        //res += ms;
         //new state is stored in board2 -> we swap these
         std::swap(d_map.board, d_map.board2);
     }
+    cudaEventRecord(ev2);
+    cudaEventSynchronize(ev2);
+    cudaEventElapsedTime(&res, ev1, ev2);
     //if(cudaError_t e = cudaGetLastError(); e != cudaSuccess) 
     //    std::cout<<std::format("ERROR {}\n", (int)e);
 

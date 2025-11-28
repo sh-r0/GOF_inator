@@ -13,8 +13,6 @@ find_package(CUDA REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTKMM REQUIRED gtkmm-4.0)
-#find_package(PkgConfig REQUIRED)
-#pkg_check_modules(GTK4 REQUIRED IMPORTED_TARGET gtk4)
 
 set(SOURCES src/main.cpp src/gof.cpp src/gof_io.cpp src/gof_parallel.cpp src/gof_window.cpp src/gof_cuda.cu)
 

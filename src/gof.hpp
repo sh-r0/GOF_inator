@@ -2,8 +2,6 @@
 #include <array>
 #include <cstdint>
 #include <vector>
-//#include <cuda.h>
-//#include <bitset>
 
 struct bMap_t {
 	size_t x, y;

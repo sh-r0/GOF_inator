@@ -8,7 +8,6 @@ void parGof(bMap_t& _map, size_t _threads, scheduleType _type, size_t _chunkSize
 
     if(_chunkSize == 0)
         _chunkSize = size/_threads;
-    //std::cout<<std::format("{}\n", _chunkSize);
 
 	switch (_type) {
 		case SCHEDULE_TYPE_DYNAMIC: {
@@ -18,8 +17,6 @@ void parGof(bMap_t& _map, size_t _threads, scheduleType _type, size_t _chunkSize
 				int8_t neighbors = 0;
 				int8_t cell = _map.at(x,y);
                     
-				//todo change to clangs syntax
-//#pragma loop(unswitch)
 				for (int j = -1; j < 2; j++)
 					for (int k = -1; k < 2; k++) {
 						if ((k == j) && (j == 0)) continue;
@@ -44,8 +41,6 @@ void parGof(bMap_t& _map, size_t _threads, scheduleType _type, size_t _chunkSize
 				int8_t neighbors = 0;
 				int8_t cell = _map.at(x, y);
 
-				//todo change to clangs syntax
-//#pragma loop(unswitch)
 				for (int j = -1; j < 2; j++)
 					for (int k = -1; k < 2; k++) {
 						if ((k == j) && (j == 0)) continue;
@@ -64,15 +59,12 @@ void parGof(bMap_t& _map, size_t _threads, scheduleType _type, size_t _chunkSize
 			}
 		} break;
 		case SCHEDULE_TYPE_GUIDED: {
-//#pragma omp parallel num_threads(_threads)
 #pragma omp parallel for schedule(guided, _chunkSize) num_threads(_threads)
 			for (int i = 0; i < size; i++) {
 				int x = i % size_x, y = i / size_x;
 				int8_t neighbors = 0;
 				int8_t cell = _map.at(x, y);
 
-				//todo change to clangs syntax
-//#pragma loop(unswitch)
 				for (int j = -1; j < 2; j++)
 					for (int k = -1; k < 2; k++) {
 						if ((k == j) && (j == 0)) continue;
