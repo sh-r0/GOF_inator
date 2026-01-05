@@ -539,13 +539,13 @@ void gofWindow_t::runBtnFunc(void){
         float kernelTime = 0;
         if(!rConfig.renderToBuff && !rConfig.recordSim) { 
             if(rConfig.useSharedMem)
-                cudaGof_shared(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, rConfig.iterations);
+                kernelTime = cudaGof_shared(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, rConfig.iterations);
             else 
                 kernelTime = cudaGof(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, rConfig.iterations);
         } else if(!rConfig.renderToBuff) {
             for(size_t i = 0; i < rConfig.iterations; i++) {
                 if(rConfig.useSharedMem)
-                    cudaGof_shared(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, 1);
+                    kernelTime += cudaGof_shared(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, 1);
                 else 
                     kernelTime += cudaGof(map, rConfig.gpuThreads_x, rConfig.gpuThreads_y, 1);
                 if(rConfig.recordSim) pushMapState(record, map);

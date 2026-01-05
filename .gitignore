@@ -7,6 +7,9 @@
 *.exe
 *.mp4
 *.sln
+build.ninja
+.ninja*
+
 Debug
 Release
 todo.txt

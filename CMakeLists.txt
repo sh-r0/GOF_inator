@@ -14,6 +14,10 @@ find_package(OpenMP REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTKMM REQUIRED gtkmm-4.0)
 
+add_compile_options(
+ -O3
+)
+
 set(SOURCES src/main.cpp src/gof.cpp src/gof_io.cpp src/gof_parallel.cpp src/gof_window.cpp src/gof_cuda.cu)
 
 include_directories(${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/stb)
